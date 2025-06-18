@@ -35,7 +35,7 @@ int main() {
     // Altere este caminho para a imagem que deseja testar.
     // Certifique-se de que a imagem (ex: lego.png, coffe-table.png, lenna-RGB.png, lennaGray.png)
     // está localizada no diretório 'src/'.
-    std::string inputFilename = "src/lego.png"; // Imagem de entrada atual
+    std::string inputFilename = "src/coffe-table.png"; // Imagem de entrada atual
 
     // Cria um objeto Image carregando a imagem do caminho especificado.
     Image img(inputFilename);
@@ -57,50 +57,124 @@ int main() {
     // - Valores maiores de 'k' resultam em menos segmentos (maiores e mais homogêneos).
     // - Valores menores de 'k' resultam em mais segmentos (menores e mais detalhados).
     // O valor ideal de 'k' é experimental e depende da imagem de entrada.
-    auto labels_fz = segmenter.segmentGraphFelzenszwalb(250.0); // Valor de 'k' ajustado para lego.png
+    // O artigo usa sigma = 0.8 
+    // O valor de 'k' geralmente precisa ser aumentado para imagens suavizadas.
+    // Experimente valores de k entre 300 e 1000.
+    auto labels_fz = segmenter.segmentGraphFelzenszwalb(5000.0, 0.8);    
     auto out_fz = segmenter.visualizeSegmentation(labels_fz); // Visualiza os rótulos em cores aleatórias
     out_fz.save(baseName + "_felzenszwalb.png"); // Salva a imagem segmentada
     std::cout << "Segmentação Felzenszwalb gerada: " << baseName << "_felzenszwalb.png" << std::endl;
 
 
     // --- EXECUÇÃO E SALVAMENTO DA SEGMENTAÇÃO IFT ---
+
+    // 1. CALCULAR IMAGEM DE GRADIENTE (Pré-processamento necessário para o Watershed)
+    // Conforme justificado pelo artigo, o IFT-Watershed opera sobre as "cristas"
+    // de uma imagem de gradiente, e não na imagem de cores original.
+    std::cout << "\nCalculando imagem de gradiente para o IFT-Watershed..." << std::endl;
+    auto gradientImageVector = segmenter.calculateGradientMagnitude();
+
+    // --- SALVAR A IMAGEM DE GRADIENTE PARA VISUALIZAÇÃO ---
+    Image gradientVisImage = img; // Cria uma cópia da imagem original para usar como base
+    for (int i = 0; i < gradientVisImage.width * gradientVisImage.height; ++i) {
+        // Converte o valor double do gradiente para um valor de 8-bit (0-255)
+        uint8_t gray_val = static_cast<uint8_t>(gradientImageVector[i]);
+        // Define o pixel como um tom de cinza (R=G=B)
+        gradientVisImage.data[i] = {gray_val, gray_val, gray_val};
+    }
+
+    gradientVisImage.save(baseName + "_gradient.png");
+    std::cout << "Imagem de gradiente gerada: " << baseName << "_gradient.png" << std::endl;
     // As 'seeds' (sementes) são pontos iniciais a partir dos quais o IFT expande as regiões.
     // Seu posicionamento é crucial para o resultado do IFT.
     // As coordenadas (linha, coluna) são convertidas para um índice linear usando img.index().
     // Estas sementes são escolhidas especificamente para a imagem 'lego.png' para cobrir
     // diferentes objetos (caixa, blocos coloridos, fundo).
-    std::vector<int> seeds = {
-        img.index(100, 250),   // Topo da caixa (exemplo)
-        img.index(300, 400),   // Lado da caixa (exemplo)
-        img.index(400, 100),   // Bloco azul (exemplo)
-        img.index(400, 200),   // Bloco vermelho (exemplo)
-        img.index(400, 300),   // Bloco amarelo (exemplo)
-        img.index(50, 450),    // Fundo branco (exemplo)
-        img.index(450, 450)    // Fundo branco (exemplo)
-    };
+    // std::vector<int> seeds = {
+    //     img.index(100, 250),   // Topo da caixa (exemplo)
+    //     img.index(300, 400),   // Lado da caixa (exemplo)
+    //     img.index(400, 100),   // Bloco azul (exemplo)
+    //     img.index(400, 200),   // Bloco vermelho (exemplo)
+    //     img.index(400, 300),   // Bloco amarelo (exemplo)
+    //     img.index(50, 450),    // Fundo branco (exemplo)
+    //     img.index(450, 450)    // Fundo branco (exemplo)
+    // };
 
     // --- REFERÊNCIAS DE SEMENTES PARA OUTRAS IMAGENS (COMENTADAS) ---
     // Mantenha estas linhas comentadas; elas servem apenas como exemplo e referência
     // para outras imagens que você possa ter testado ou queira testar no futuro.
-    /*
-    std::vector<int> coffe_table_seeds = {
-        img.index(100, 350),   // Xícara de cima (com café)
-        img.index(300, 300),   // Xícara de baixo (vazia)
-        img.index(150, 150),   // Óculos
-        img.index(250, 100),   // Livro
-        img.index(400, 400),   // Mesa (fundo)
-        img.index(50, 50)      // Mesa (fundo superior esquerdo)
+    // SEEDS PARA A IMAGEM 'coffe-table.png':
+    std::vector<int> seeds = {
+        // --- Xícara da Frente (Marrom) ---
+        img.index(310, 260),   // Interior da xícara (café)
+        img.index(350, 250),   // Pires da xícara
+
+        // --- Xícara de Trás (Verde) ---
+        img.index(155, 350),   // Interior da xícara (espuma)
+        img.index(210, 350),   // Pires da xícara
+
+        // --- Livro e Óculos ---
+        img.index(225, 100),   // Capa do livro (inferior)
+        img.index(133, 105),   // Capa do livro (superior)
+        img.index(138, 189),   // Capa do livro (superior-direita)
+        img.index(218, 180),    // Borda lateral do livro (páginas)
+        img.index(275, 60),    // Borda inferior do livro (páginas)
+        img.index(150, 135),   // Óculos (lente direita)
+        img.index(195, 65),    // Óculos (lente esquerda)
+
+        // --- Mesa e Fundo ---
+        img.index(140, 40),    // Mesa (próximo ao livro)
+        img.index(320, 55),    // Mesa (meio-esquerda)
+        img.index(450, 370),   // Mesa (canto inferior direito)
+        img.index(460, 135),   // Mesa (canto inferior esquerdo)
+        img.index(85, 230),    // Mesa (canto superior direito)
+        img.index(85, 25),      // Fundo (canto superior esquerdo)
+        img.index(30, 200),      // Fundo
     };
-    */
-    /*
-    std::vector<int> lenna_seeds = {
-        img.index(50, 250),
-        img.index(150, 250),
-        img.index(300, 150),
-        img.index(300, 400),
-        img.index(450, 250)
-    };
-    */
+    // SEEDS PARA A IMAGEM 'lenna-RGB.png':
+    // std::vector<int> seeds = {
+    //     // --- Rosto e Pele ---
+    //     img.index(225, 306),   // Testa
+    //     img.index(310, 240),   // Bochecha (à nossa esquerda)
+    //     img.index(300, 300),   // Nariz
+    //     img.index(385, 275),   // Queixo
+    //     img.index(440, 320),   // Ombro (à frente)
+    //     img.index(465, 250),   // Ombro (atrás)
+    //     img.index(470, 330),   // Ombro (baixo)
+
+    //     // --- Olhos e Lábios (Detalhes Finos) ---
+    //     img.index(261, 263),   // Olho (à nossa esquerda)
+    //     img.index(262, 326),   // Olho (à nossa direita)
+    //     img.index(347, 291),   // Lábios
+
+    //     // --- Chapéu ---
+    //     img.index(66, 161),    // Topo do chapéu
+    //     img.index(91, 182),   // Meio do chapéu (área de textura)
+    //     img.index(145, 225),   // Fita do chapéu
+    //     img.index(185, 368),   // Aba do chapéu (próxima ao fundo)
+    //     img.index(185, 308),   // Aba do chapéu (próxima ao cabelo)
+
+    //     // --- Cabelo ---
+    //     img.index(359, 344),   // Cabelo próximo ao rosto
+    //     img.index(386, 186),   // Cabelo nas costas
+
+    //     // --- Pluma Roxa (Textura Complexa) ---
+    //     img.index(218, 201),   // Parte de cima da pluma
+    //     img.index(321, 109),   // Meio da pluma
+    //     img.index(362, 92),   // Meio da pluma
+    //     img.index(462, 106),    // Ponta de baixo da pluma
+
+    //     // --- Fundo ---
+    //     img.index(230, 81),    // Fundo vermelho/rosa (à esquerda)
+    //     img.index(19, 221),    // Fundo vermelho/rosa (topo)
+    //     img.index(354, 474),   // Reflexo no espelho (objeto amarelo)
+    //     img.index(204, 398),   // borda do espelho
+    //     img.index(60, 475),    // borda do espelho (cima)
+    //     img.index(105, 372),   // Área escura (canto superior direito)
+    //     img.index(371, 5),    // Área escura (atrás das costas)
+    //     img.index(420, 43)    // Pilar (atrás das costas)
+    // };
+    
 
     // Verificação de segurança para garantir que todas as sementes estão dentro dos limites da imagem.
     for (size_t i = 0; i < seeds.size(); ++i) {
@@ -111,29 +185,27 @@ int main() {
     }
 
     // Executa o algoritmo IFT com as sementes definidas.
-    auto labels_ift = segmenter.segmentGraphIFT(seeds);
+    auto labels_ift = segmenter.segmentGraphIFT(gradientImageVector, seeds);
     auto out_ift = segmenter.visualizeSegmentation(labels_ift); // Visualiza os rótulos
-    out_ift.save(baseName + "_ift.png"); // Salva a imagem segmentada pelo IFT
-    std::cout << "Segmentação IFT gerada: " << baseName << "_ift.png" << std::endl;
+    out_ift.save(baseName + "_ift_watershed.png"); // Salva a imagem segmentada
+    std::cout << "Segmentação IFT-Watershed gerada: " << baseName << "_ift_watershed.png" << std::endl;
 
-    // --- CÓDIGO DE DEPURACÃO PARA O IFT ---
-    // Este bloco calcula e imprime o número de rótulos únicos gerados pelo IFT.
-    // Isso ajuda a entender a granularidade da segmentação do IFT.
+    // --- CÓDIGO DE DEPURACÃO PARA O IFT-WATERSHED ---
     std::set<int> unique_ift_labels;
     for (int label : labels_ift) {
         unique_ift_labels.insert(label);
     }
-    std::cout << "\n--- DEPURACAO IFT ---" << std::endl;
+    std::cout << "\n--- DEPURACAO IFT-WATERSHED ---" << std::endl;
     std::cout << "Número de sementes fornecidas: " << seeds.size() << std::endl;
-    std::cout << "Número de rótulos únicos na saída do IFT: " << unique_ift_labels.size() << std::endl;
+    std::cout << "Número de rótulos únicos na saída: " << unique_ift_labels.size() << std::endl;
     if (unique_ift_labels.size() == 1) {
-        std::cout << "ATENÇÃO: O IFT resultou em uma única região. Isso pode indicar que as sementes não foram eficazes ou que a função de custo é muito permissiva." << std::endl;
+        std::cout << "ATENÇÃO: A segmentação resultou em uma única região." << std::endl;
     } else if (unique_ift_labels.size() < seeds.size()) {
         std::cout << "AVISO: O número de rótulos únicos (" << unique_ift_labels.size()
                   << ") é menor do que o número de sementes fornecidas (" << seeds.size() << ")." << std::endl;
-        std::cout << "Isso pode ocorrer se múltiplas sementes convergirem para a mesma região ou se algumas sementes foram 'engolidas' por outras." << std::endl;
+        std::cout << "Isso é esperado no IFT-Watershed se sementes próximas competirem e uma delas prevalecer." << std::endl;
     }
-    std::cout << "--- FIM DEPURACAO IFT ---\n" << std::endl;
+    std::cout << "--- FIM DEPURACAO IFT-WATERSHED ---\n" << std::endl;
 
     std::cout << "Processo de segmentação concluído!\n";
     return 0; // Retorna 0 indicando sucesso.

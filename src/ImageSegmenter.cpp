@@ -4,6 +4,7 @@
 #include <unordered_map>    // Para std::unordered_map (usado em visualizeSegmentation)
 #include <random>           // Para geração de números aleatórios (para cores em visualizeSegmentation)
 #include <iostream>         // Para std::cout, std::cerr
+#include <numeric>  // Para std::inner_product e outros
 
 // Construtor da classe ImageSegmenter. Inicializa com a imagem fornecida.
 ImageSegmenter::ImageSegmenter(const Image& img) : image(img), width(img.width), height(img.height) {}
@@ -47,59 +48,97 @@ double ImageSegmenter::pixelDifferenceIFT(const Pixel& a, const Pixel& b) {
 }
 
 // Constrói um vetor de todas as arestas entre pixels vizinhos (4-conectividade).
-std::vector<Edge> ImageSegmenter::buildEdges() {
+std::vector<Edge> ImageSegmenter::buildEdges(const Image& sourceImage) {
     std::vector<Edge> edges;
-    // Itera sobre todos os pixels da imagem.
     for (int r = 0; r < height; ++r) {
         for (int c = 0; c < width; ++c) {
-            int u = image.index(r, c); // Índice do pixel atual
-            
-            // Adiciona aresta para o vizinho à direita, se existir.
+            int u = sourceImage.index(r, c);
             if (c + 1 < width) {
-                int v = image.index(r, c + 1);
-                // O peso da aresta é a diferença entre os pixels, calculada por pixelDifference (para Felzenszwalb).
-                edges.push_back({u, v, pixelDifference(image.getPixel(r, c), image.getPixel(r, c + 1))});
+                int v = sourceImage.index(r, c + 1);
+                // Calcula a diferença usando a imagem fornecida (sourceImage)
+                edges.push_back({u, v, pixelDifference(sourceImage.getPixel(r, c), sourceImage.getPixel(r, c + 1))});
             }
-            // Adiciona aresta para o vizinho abaixo, se existir.
             if (r + 1 < height) {
-                int v = image.index(r + 1, c);
-                // O peso da aresta é a diferença entre os pixels, calculada por pixelDifference (para Felzenszwalb).
-                edges.push_back({u, v, pixelDifference(image.getPixel(r, c), image.getPixel(r + 1, c))});
+                int v = sourceImage.index(r + 1, c);
+                // Calcula a diferença usando a imagem fornecida (sourceImage)
+                edges.push_back({u, v, pixelDifference(sourceImage.getPixel(r, c), sourceImage.getPixel(r + 1, c))});
             }
         }
     }
     return edges;
 }
 
-// Implementação do algoritmo de segmentação Felzenszwalb.
-std::vector<int> ImageSegmenter::segmentGraphFelzenszwalb(double k) {
-    int n = width * height; // Número total de pixels na imagem.
+/**
+ * @brief Cria uma nova imagem suavizada com um filtro Gaussiano.
+ * @param sigma O desvio padrão do filtro. Valores maiores produzem mais desfoque.
+ * @return Um novo objeto Image contendo os dados suavizados.
+ */
+Image ImageSegmenter::createSmoothedImage(double sigma) {
+    Image smoothedImage = image; // Cria uma cópia da imagem original para modificar
 
-    // Mensagens de depuração para as dimensões da imagem.
-    std::cout << "[DEBUG] Felzenszwalb - Largura: " << width << ", Altura: " << height << ", Total Pixels (n): " << n << std::endl;
-    if (n <= 0) {
-        std::cerr << "[ERRO] Felzenszwalb - Dimensões da imagem inválidas. Largura e Altura devem ser positivos!" << std::endl;
-        exit(1); // Sai do programa em caso de erro crítico.
+    int kernelSize = static_cast<int>(6 * sigma) | 1;
+    int kernelRadius = kernelSize / 2;
+    std::vector<double> kernel(kernelSize * kernelSize);
+    double sum = 0.0;
+
+    // Cria o kernel Gaussiano 2D
+    for (int j = -kernelRadius; j <= kernelRadius; ++j) {
+        for (int i = -kernelRadius; i <= kernelRadius; ++i) {
+            double r = std::sqrt(i * i + j * j);
+            kernel[(j + kernelRadius) * kernelSize + (i + kernelRadius)] = (std::exp(-(r * r) / (2 * sigma * sigma)) / (2 * M_PI * sigma * sigma));
+            sum += kernel[(j + kernelRadius) * kernelSize + (i + kernelRadius)];
+        }
     }
+    for (int i = 0; i < kernelSize * kernelSize; ++i) kernel[i] /= sum;
 
-    DSU dsu(n); // Cria uma instância da estrutura Disjoint Set Union (DSU).
-    std::vector<Edge> edges = buildEdges(); // Constrói todas as arestas do grafo de pixels.
-    // Ordena as arestas pelo peso (diferença entre pixels) em ordem crescente.
+    // Aplica a convolução do kernel na imagem original
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            double r_sum = 0.0, g_sum = 0.0, b_sum = 0.0;
+            for (int j = -kernelRadius; j <= kernelRadius; ++j) {
+                for (int i = -kernelRadius; i <= kernelRadius; ++i) {
+                    int pixelX = std::min(width - 1, std::max(0, x + i));
+                    int pixelY = std::min(height - 1, std::max(0, y + j));
+                    
+                    const Pixel& p = image.data[pixelY * width + pixelX];
+                    double kernelValue = kernel[(j + kernelRadius) * kernelSize + (i + kernelRadius)];
+                    r_sum += p.r * kernelValue;
+                    g_sum += p.g * kernelValue;
+                    b_sum += p.b * kernelValue;
+                }
+            }
+            smoothedImage.data[y * width + x] = {
+                static_cast<uint8_t>(r_sum),
+                static_cast<uint8_t>(g_sum),
+                static_cast<uint8_t>(b_sum)
+            };
+        }
+    }
+    return smoothedImage;
+}
+
+// Implementação do algoritmo de segmentação Felzenszwalb.
+std::vector<int> ImageSegmenter::segmentGraphFelzenszwalb(double k, double sigma) {
+    int n = width * height;
+
+    // 1. Cria uma versão suavizada da imagem antes de qualquer outra coisa.
+    // O valor de sigma controla a intensidade do desfoque. O artigo sugere 0.8.
+    Image smoothedImage = createSmoothedImage(sigma);
+    
+    // 2. Constrói as arestas do grafo USANDO A IMAGEM SUAVIZADA.
+    std::vector<Edge> edges = buildEdges(smoothedImage); 
+    
+    // 3. O resto do algoritmo permanece o mesmo.
+    DSU dsu(n);
     std::sort(edges.begin(), edges.end(), [](Edge a, Edge b) { return a.weight < b.weight; });
 
-    // Itera sobre as arestas ordenadas e tenta uni-las.
     for (const Edge& e : edges) {
-        // Tenta unir os dois vértices (pixels) da aresta.
-        // A união ocorre se a diferença entre eles (e.weight) não for muito maior
-        // que a "variação interna" dos componentes já existentes (controlado por k).
         dsu.unite(e.u, e.v, e.weight, k);
     }
 
-    std::vector<int> labels(n); // Vetor para armazenar os rótulos de segmentação.
-    // Para cada pixel, encontra o representante (raiz) do seu conjunto na DSU.
-    // Este representante serve como o rótulo do segmento.
+    std::vector<int> labels(n);
     for (int i = 0; i < n; ++i) labels[i] = dsu.find(i);
-    return labels; // Retorna os rótulos de segmentação.
+    return labels;
 }
 
 // Constrói uma lista de adjacência para o grafo de pixels (4-conectividade).
@@ -120,8 +159,89 @@ std::vector<std::vector<int>> ImageSegmenter::buildAdjacency() {
     return adj; // Retorna a lista de adjacência.
 }
 
+/**
+ * @brief Calcula a magnitude do gradiente da imagem usando o operador Sobel.
+ *
+ * Esta versão foi CORRIGIDA para trabalhar com um `std::vector<Pixel>`,
+ * acessando os membros .r, .g, .b de cada pixel para a conversão para tons de cinza.
+ *
+ * @return Um vetor de doubles contendo o mapa de gradiente normalizado.
+ */
+std::vector<double> ImageSegmenter::calculateGradientMagnitude() {
+    int width = image.width;
+    int height = image.height;
+    int n = width * height;
+
+    if (n == 0) {
+        std::cerr << "AVISO: Tentando calcular o gradiente de uma imagem vazia." << std::endl;
+        return {};
+    }
+
+    std::vector<double> grayscaleImage(n);
+    
+    // --- CORREÇÃO PRINCIPAL ---
+    // 1. Converter imagem para tons de cinza
+    // Iteramos sobre o vetor de Pixels. Para cada Pixel, calculamos seu
+    // valor de intensidade (tons de cinza) usando seus membros .r, .g e .b.
+    for (int i = 0; i < n; ++i) {
+        const Pixel& p = image.data[i];
+        // Fórmula de luminosidade padrão para conversão RGB -> Grayscale
+        // Se sua struct Pixel usa nomes diferentes (ex: red, green, blue), ajuste aqui.
+        grayscaleImage[i] = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+    }
+    
+    // O restante da função, que opera sobre a imagem em tons de cinza,
+    // permanece exatamente o mesmo, pois já está correto.
+
+    // 2. Definir os kernels (máscaras) do operador Sobel
+    const double Gx[3][3] = {{-1, 0, 1},
+                             {-2, 0, 2},
+                             {-1, 0, 1}};
+
+    const double Gy[3][3] = {{-1, -2, -1},
+                             { 0,  0,  0},
+                             { 1,  2,  1}};
+
+    std::vector<double> gradientImage(n, 0.0);
+    double max_gradient = 0.0;
+
+    // 3. Aplicar os kernels na imagem em tons de cinza
+    for (int y = 1; y < height - 1; ++y) {
+        for (int x = 1; x < width - 1; ++x) {
+            double sum_gx = 0.0;
+            double sum_gy = 0.0;
+
+            for (int j = -1; j <= 1; ++j) {
+                for (int i = -1; i <= 1; ++i) {
+                    double pixel_val = grayscaleImage[(y + j) * width + (x + i)];
+                    sum_gx += pixel_val * Gx[j + 1][i + 1];
+                    sum_gy += pixel_val * Gy[j + 1][i + 1];
+                }
+            }
+            
+            double magnitude = std::sqrt(sum_gx * sum_gx + sum_gy * sum_gy);
+            int currentIndex = y * width + x;
+            gradientImage[currentIndex] = magnitude;
+
+            if (magnitude > max_gradient) {
+                max_gradient = magnitude;
+            }
+        }
+    }
+
+    // 4. Normalizar a imagem de gradiente para o intervalo [0, 255]
+    if (max_gradient > 0) {
+        for (int i = 0; i < n; ++i) {
+            gradientImage[i] = (gradientImage[i] / max_gradient) * 255.0;
+        }
+    }
+
+    return gradientImage;
+}
+
 // Implementação do algoritmo Image Forest Transform (IFT).
-std::vector<int> ImageSegmenter::segmentGraphIFT(const std::vector<int>& seeds) {
+std::vector<int> ImageSegmenter::segmentGraphIFT(const std::vector<double>& gradientImage, const std::vector<int>& seeds) 
+{
     int n = width * height; // Número total de pixels.
     std::vector<double> cost(n, 1e9); // Custo do caminho da semente até o pixel (inicialmente infinito).
     std::vector<int> label(n, -1);    // Rótulo do pixel (inicialmente -1, sem rótulo).
@@ -154,9 +274,9 @@ std::vector<int> ImageSegmenter::segmentGraphIFT(const std::vector<int>& seeds) 
         // Itera sobre todos os vizinhos 'v' do pixel atual 'u'.
         for (int v : adj[u]) {
             // Calcula o peso da aresta entre 'u' e 'v' usando pixelDifferenceIFT (amplificado).
-            double w = pixelDifferenceIFT(image.data[u], image.data[v]);
+            double w = gradientImage[v];
             // Calcula o novo custo para 'v' através de 'u': custo acumulado (cost[u] + w).
-            double new_cost = cost[u] + w;
+            double new_cost = std::max(cost[u], w);  // fmax(π⋅⟨s,t⟩) = max{fmax(π),w(s,t)}
 
             // --- LINHAS DE DEPURAGEM (COMENTADAS POR PADRÃO) ---
             // Descomente para ver o fluxo detalhado do IFT no console.

@@ -32,14 +32,14 @@ public:
      * @param k Parâmetro de limiar para o Felzenszwalb. Controla a granularidade da segmentação.
      * @return Um vetor de inteiros, onde cada elemento é o rótulo do segmento correspondente ao pixel.
      */
-    std::vector<int> segmentGraphFelzenszwalb(double k);
+    std::vector<int> segmentGraphFelzenszwalb(double k, double sigma);
 
     /**
      * @brief Realiza a segmentação da imagem usando o algoritmo Image Forest Transform (IFT).
      * @param seeds Um vetor de índices de pixels que servem como sementes para o IFT.
      * @return Um vetor de inteiros, onde cada elemento é o rótulo da semente que dominou o pixel.
      */
-    std::vector<int> segmentGraphIFT(const std::vector<int>& seeds);
+    std::vector<int> segmentGraphIFT(const std::vector<double>& gradientImage, const std::vector<int>& seeds);
 
     /**
      * @brief Visualiza a segmentação atribuindo cores aleatórias a cada rótulo único.
@@ -48,6 +48,11 @@ public:
      * @return Um objeto Image representando a visualização da segmentação.
      */
     Image visualizeSegmentation(const std::vector<int>& labels);
+
+
+    std::vector<double> calculateGradientMagnitude();
+
+    Image createSmoothedImage(double sigma);
 
 private:
     const Image& image; // Referência constante à imagem original
@@ -58,7 +63,7 @@ private:
      * O peso de cada aresta é calculado pela função pixelDifference.
      * @return Um vetor de objetos Edge.
      */
-    std::vector<Edge> buildEdges();
+    std::vector<Edge> buildEdges(const Image& sourceImage);
 
     /**
      * @brief Calcula a diferença/distância entre dois pixels.
