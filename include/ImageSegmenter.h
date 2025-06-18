@@ -49,10 +49,30 @@ public:
      */
     Image visualizeSegmentation(const std::vector<int>& labels);
 
-
+    /**
+     * @brief Calcula a magnitude do gradiente da imagem usando o operador Sobel.
+     * @return Um vetor de doubles contendo o mapa de gradiente normalizado.
+     */
     std::vector<double> calculateGradientMagnitude();
 
+    /**
+     * @brief Cria uma nova imagem suavizada com um filtro Gaussiano.
+     * @param sigma O desvio padrão do filtro. Valores maiores produzem mais desfoque.
+     * @return Um novo objeto Image contendo os dados suavizados.
+     */
     Image createSmoothedImage(double sigma);
+
+
+
+    /**
+     * @brief Recorta um segmento específico da imagem original com base nos rótulos de segmentação.
+     * A área fora do segmento dentro da caixa delimitadora será preenchida com a cor de fundo.
+     * @param labels Um vetor de rótulos de segmentação.
+     * @param targetSegmentLabel O rótulo do segmento que se deseja recortar.
+     * @param backgroundColor A cor a ser usada para preencher as áreas fora do segmento recortado.
+     * @return Uma nova imagem contendo apenas o segmento recortado.
+     */
+    Image cropSegment(const std::vector<int>& labels, int targetSegmentLabel, const Pixel& backgroundColor);
 
 private:
     const Image& image; // Referência constante à imagem original

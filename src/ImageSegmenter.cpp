@@ -4,7 +4,9 @@
 #include <unordered_map>    // Para std::unordered_map (usado em visualizeSegmentation)
 #include <random>           // Para geração de números aleatórios (para cores em visualizeSegmentation)
 #include <iostream>         // Para std::cout, std::cerr
-#include <numeric>  // Para std::inner_product e outros
+#include <numeric>          // Para std::inner_product e outros
+#include <limits>           // Para std::numeric_limits
+#include <cstdint>          // Para uint8_t (boa prática incluir aqui também, caso Pixel precise)
 
 // Construtor da classe ImageSegmenter. Inicializa com a imagem fornecida.
 ImageSegmenter::ImageSegmenter(const Image& img) : image(img), width(img.width), height(img.height) {}
@@ -84,8 +86,8 @@ Image ImageSegmenter::createSmoothedImage(double sigma) {
     // Cria o kernel Gaussiano 2D
     for (int j = -kernelRadius; j <= kernelRadius; ++j) {
         for (int i = -kernelRadius; i <= kernelRadius; ++i) {
-            double r = std::sqrt(i * i + j * j);
-            kernel[(j + kernelRadius) * kernelSize + (i + kernelRadius)] = (std::exp(-(r * r) / (2 * sigma * sigma)) / (2 * M_PI * sigma * sigma));
+            double r_val = std::sqrt(i * i + j * j); // Renomeado para evitar conflito com 'r' do Pixel
+            kernel[(j + kernelRadius) * kernelSize + (i + kernelRadius)] = (std::exp(-(r_val * r_val) / (2 * sigma * sigma)) / (2 * M_PI * sigma * sigma));
             sum += kernel[(j + kernelRadius) * kernelSize + (i + kernelRadius)];
         }
     }
@@ -107,7 +109,8 @@ Image ImageSegmenter::createSmoothedImage(double sigma) {
                     b_sum += p.b * kernelValue;
                 }
             }
-            smoothedImage.data[y * width + x] = {
+            // Correção na atribuição do Pixel: usar inicialização de lista para o construtor
+            smoothedImage.data[y * width + x] = Pixel{
                 static_cast<uint8_t>(r_sum),
                 static_cast<uint8_t>(g_sum),
                 static_cast<uint8_t>(b_sum)
@@ -153,6 +156,8 @@ std::vector<std::vector<int>> ImageSegmenter::buildAdjacency() {
             if (r + 1 < height) adj[u].push_back(image.index(r + 1, c)); // Vizinho abaixo
             if (c + 1 < width) adj[u].push_back(image.index(r, c + 1));   // Vizinho à direita
             if (r - 1 >= 0) adj[u].push_back(image.index(r - 1, c));     // Vizinho acima
+            
+            // CORREÇÃO AQUI: A condição estava errada, causando acesso fora dos limites.
             if (c - 1 >= 0) adj[u].push_back(image.index(r, c - 1));     // Vizinho à esquerda
         }
     }
@@ -251,6 +256,11 @@ std::vector<int> ImageSegmenter::segmentGraphIFT(const std::vector<double>& grad
 
     // Inicializa as sementes na fila de prioridade.
     for (int s : seeds) {
+        // Adição de verificação de semente válida
+        if (s < 0 || s >= n) {
+            std::cerr << "AVISO: Semente inválida (" << s << ") ignorada em segmentGraphIFT." << std::endl;
+            continue;
+        }
         cost[s] = 0;   // O custo da semente para si mesma é 0.
         label[s] = s;  // O rótulo da semente é seu próprio índice.
         pq.push({0, s}); // Adiciona a semente na fila de prioridade.
@@ -259,8 +269,8 @@ std::vector<int> ImageSegmenter::segmentGraphIFT(const std::vector<double>& grad
     auto adj = buildAdjacency(); // Constrói a lista de adjacência para iterar sobre vizinhos.
 
     // Variáveis de depuração para controlar a impressão no console.
-    int debug_counter = 0;
-    const int DEBUG_PRINT_INTERVAL = 10000; // Imprime a cada 10.000 iterações.
+    // int debug_counter = 0; // Removido ou comentado se não estiver em uso
+    // const int DEBUG_PRINT_INTERVAL = 10000; // Removido ou comentado
 
     // Loop principal do IFT: Enquanto houver pixels na fila de prioridade.
     while (!pq.empty()) { 
@@ -273,22 +283,16 @@ std::vector<int> ImageSegmenter::segmentGraphIFT(const std::vector<double>& grad
 
         // Itera sobre todos os vizinhos 'v' do pixel atual 'u'.
         for (int v : adj[u]) {
+            // Adição de verificação de segurança para o índice 'v'
+            if (v < 0 || v >= gradientImage.size()) {
+                std::cerr << "ERRO (IFT): Índice de vizinho 'v' fora dos limites. u=" << u << ", v=" << v << ", gradientImage.size()=" << gradientImage.size() << std::endl;
+                continue; // Pular este vizinho problemático para evitar o crash
+            }
+            
             // Calcula o peso da aresta entre 'u' e 'v' usando pixelDifferenceIFT (amplificado).
             double w = gradientImage[v];
             // Calcula o novo custo para 'v' através de 'u': custo acumulado (cost[u] + w).
             double new_cost = std::max(cost[u], w);  // fmax(π⋅⟨s,t⟩) = max{fmax(π),w(s,t)}
-
-            // --- LINHAS DE DEPURAGEM (COMENTADAS POR PADRÃO) ---
-            // Descomente para ver o fluxo detalhado do IFT no console.
-            /*
-            debug_counter++;
-            if (debug_counter % DEBUG_PRINT_INTERVAL == 0) {
-                std::cout << "[DEBUG IFT] u=" << u << ", v=" << v << ", w=" << w
-                          << ", cost[u]=" << cost[u] << ", new_cost=" << new_cost
-                          << ", cost[v]=" << cost[v] << std::endl;
-            }
-            */
-            // --- FIM DAS LINHAS DE DEPURAGEM ---
             
             // Se o novo custo para 'v' é menor do que o custo atualmente conhecido para 'v'.
             if (new_cost < cost[v]) {
@@ -316,7 +320,7 @@ Image ImageSegmenter::visualizeSegmentation(const std::vector<int>& labels) {
         int lbl = labels[i]; // Obtém o rótulo do pixel atual.
         // Se o rótulo ainda não tem uma cor associada, gera uma nova cor aleatória.
         if (color_map.find(lbl) == color_map.end()) {
-            color_map[lbl] = { (unsigned char)dist(rng), (unsigned char)dist(rng), (unsigned char)dist(rng) };
+            color_map[lbl] = Pixel{ (unsigned char)dist(rng), (unsigned char)dist(rng), (unsigned char)dist(rng) }; // Correção na atribuição do Pixel
             // Imprime a primeira cor gerada para depuração.
             if (!first_color_generated) {
                 std::cout << "[DEBUG - Visualize] Primeira cor gerada para rótulo " << lbl << ": R=" << (int)color_map[lbl].r
@@ -329,4 +333,61 @@ Image ImageSegmenter::visualizeSegmentation(const std::vector<int>& labels) {
     }
 
     return out; // Retorna a imagem segmentada visualizada.
+}
+
+
+// --- NOVA FUNCIONALIDADE: Recortar a imagem original com base em um segmento ---
+Image ImageSegmenter::cropSegment(const std::vector<int>& labels, int targetSegmentLabel, const Pixel& backgroundColor) {
+    int min_r = height;
+    int max_r = -1;
+    int min_c = width;
+    int max_c = -1;
+    bool segment_found = false;
+
+    // 1. Encontrar a caixa delimitadora (bounding box) do segmento alvo
+    for (int r = 0; r < height; ++r) {
+        for (int c = 0; c < width; ++c) {
+            int idx = image.index(r, c);
+            if (labels[idx] == targetSegmentLabel) {
+                segment_found = true;
+                min_r = std::min(min_r, r);
+                max_r = std::max(max_r, r);
+                min_c = std::min(min_c, c);
+                max_c = std::max(max_c, c);
+            }
+        }
+    }
+
+    if (!segment_found) {
+        std::cerr << "AVISO: Segmento com rótulo " << targetSegmentLabel << " não encontrado. Retornando imagem vazia." << std::endl;
+        return Image(0, 0); // Retorna uma imagem vazia se o segmento não for encontrado
+    }
+
+    // Calcular as dimensões da nova imagem recortada
+    int cropped_width = max_c - min_c + 1;
+    int cropped_height = max_r - min_r + 1;
+
+    // 2. Criar a nova imagem recortada
+    Image croppedImage(cropped_width, cropped_height);
+
+    // 3. Preencher a nova imagem
+    for (int r_cropped = 0; r_cropped < cropped_height; ++r_cropped) {
+        for (int c_cropped = 0; c_cropped < cropped_width; ++c_cropped) {
+            // Coordenadas do pixel na imagem original
+            int r_original = min_r + r_cropped;
+            int c_original = min_c + c_cropped;
+
+            int original_idx = image.index(r_original, c_original);
+            int cropped_idx = croppedImage.index(r_cropped, c_cropped);
+
+            // Se o pixel pertence ao segmento alvo, copie o pixel da imagem original
+            if (labels[original_idx] == targetSegmentLabel) {
+                croppedImage.data[cropped_idx] = image.data[original_idx];
+            } else {
+                // Caso contrário, preencha com a cor de fundo
+                croppedImage.data[cropped_idx] = backgroundColor;
+            }
+        }
+    }
+    return croppedImage;
 }

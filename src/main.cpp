@@ -3,6 +3,7 @@
 #include <iostream>         // Para entrada e saída de dados (cout, cerr)
 #include <string>           // Para manipulação de strings (nomes de arquivos)
 #include <set>              // Usado para contar rótulos únicos na depuração do IFT
+#include <cstdint>          // Necessário para uint8_t
 
 /**
  * @brief Extrai o nome base de um caminho de arquivo, removendo diretórios e extensão.
@@ -35,7 +36,7 @@ int main() {
     // Altere este caminho para a imagem que deseja testar.
     // Certifique-se de que a imagem (ex: lego.png, coffe-table.png, lenna-RGB.png, lennaGray.png)
     // está localizada no diretório 'src/'.
-    std::string inputFilename = "src/coffe-table.png"; // Imagem de entrada atual
+    std::string inputFilename = "src/lenna-RGB.png"; // Imagem de entrada atual
 
     // Cria um objeto Image carregando a imagem do caminho especificado.
     Image img(inputFilename);
@@ -65,6 +66,21 @@ int main() {
     out_fz.save(baseName + "_felzenszwalb.png"); // Salva a imagem segmentada
     std::cout << "Segmentação Felzenszwalb gerada: " << baseName << "_felzenszwalb.png" << std::endl;
 
+    // --- RECORTANDO UM SEGMENTO ESPECÍFICO COM FELZENSZWALB ---
+    // Escolha um rótulo de segmento para recortar.
+    // Você precisará inspecionar a imagem '_felzenszwalb.png' para encontrar um rótulo interessante.
+    // Por exemplo, para 'coffe-table.png', o rótulo do pixel (310, 260) pode ser parte da xícara da frente.
+    int target_segment_label_fz = labels_fz[img.index(310, 260)]; // Exemplo: rótulo do pixel central da xícara da frente
+    Pixel background_color_fz = {0, 0, 0}; // Cor de fundo preta para áreas fora do segmento recortado
+    Image cropped_fz_segment = segmenter.cropSegment(labels_fz, target_segment_label_fz, background_color_fz);
+    if (cropped_fz_segment.width > 0 && cropped_fz_segment.height > 0) {
+        cropped_fz_segment.save(baseName + "_felzenszwalb_cropped_segment.png");
+        std::cout << "Segmento Felzenszwalb recortado (" << target_segment_label_fz << ") gerado: " 
+                  << baseName << "_felzenszwalb_cropped_segment.png" << std::endl;
+    } else {
+        std::cout << "Falha ao recortar segmento Felzenszwalb ou segmento não encontrado." << std::endl;
+    }
+
 
     // --- EXECUÇÃO E SALVAMENTO DA SEGMENTAÇÃO IFT ---
 
@@ -80,11 +96,13 @@ int main() {
         // Converte o valor double do gradiente para um valor de 8-bit (0-255)
         uint8_t gray_val = static_cast<uint8_t>(gradientImageVector[i]);
         // Define o pixel como um tom de cinza (R=G=B)
-        gradientVisImage.data[i] = {gray_val, gray_val, gray_val};
+        // CORREÇÃO AQUI: Crie um objeto Pixel temporário e atribua-o
+        gradientVisImage.data[i] = Pixel{gray_val, gray_val, gray_val};
     }
 
     gradientVisImage.save(baseName + "_gradient.png");
     std::cout << "Imagem de gradiente gerada: " << baseName << "_gradient.png" << std::endl;
+    
     // As 'seeds' (sementes) são pontos iniciais a partir dos quais o IFT expande as regiões.
     // Seu posicionamento é crucial para o resultado do IFT.
     // As coordenadas (linha, coluna) são convertidas para um índice linear usando img.index().
@@ -190,6 +208,21 @@ int main() {
     out_ift.save(baseName + "_ift_watershed.png"); // Salva a imagem segmentada
     std::cout << "Segmentação IFT-Watershed gerada: " << baseName << "_ift_watershed.png" << std::endl;
 
+    // --- RECORTANDO UM SEGMENTO ESPECÍFICO COM IFT ---
+    // Escolha um rótulo de segmento para recortar.
+    // Você precisará inspecionar a imagem '_ift_watershed.png' para encontrar um rótulo interessante.
+    // Para 'coffe-table.png', o rótulo do pixel (155, 350) pode ser parte da xícara de trás.
+    int target_segment_label_ift = labels_ift[img.index(155, 350)]; // Exemplo: rótulo do pixel central da xícara de trás
+    Pixel background_color_ift = {0, 0, 0}; // Cor de fundo preta para áreas fora do segmento recortado
+    Image cropped_ift_segment = segmenter.cropSegment(labels_ift, target_segment_label_ift, background_color_ift);
+    if (cropped_ift_segment.width > 0 && cropped_ift_segment.height > 0) {
+        cropped_ift_segment.save(baseName + "_ift_watershed_cropped_segment.png");
+        std::cout << "Segmento IFT-Watershed recortado (" << target_segment_label_ift << ") gerado: " 
+                  << baseName << "_ift_watershed_cropped_segment.png" << std::endl;
+    } else {
+        std::cout << "Falha ao recortar segmento IFT-Watershed ou segmento não encontrado." << std::endl;
+    }
+
     // --- CÓDIGO DE DEPURACÃO PARA O IFT-WATERSHED ---
     std::set<int> unique_ift_labels;
     for (int label : labels_ift) {
@@ -207,6 +240,6 @@ int main() {
     }
     std::cout << "--- FIM DEPURACAO IFT-WATERSHED ---\n" << std::endl;
 
-    std::cout << "Processo de segmentação concluído!\n";
+    std::cout << "Processo de segmentação e recorte concluído!\n";
     return 0; // Retorna 0 indicando sucesso.
 }
