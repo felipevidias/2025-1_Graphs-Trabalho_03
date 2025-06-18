@@ -4,6 +4,7 @@
 #include <string>           // Para manipulação de strings (nomes de arquivos)
 #include <set>              // Usado para contar rótulos únicos na depuração do IFT
 #include <cstdint>          // Necessário para uint8_t
+#include <chrono>          // Para manipulação de tempo (opcional, mas útil para medir desempenho)
 
 /**
  * @brief Extrai o nome base de um caminho de arquivo, removendo diretórios e extensão.
@@ -36,7 +37,7 @@ int main() {
     // Altere este caminho para a imagem que deseja testar.
     // Certifique-se de que a imagem (ex: lego.png, coffe-table.png, lenna-RGB.png, lennaGray.png)
     // está localizada no diretório 'src/'.
-    std::string inputFilename = "src/lenna-RGB.png"; // Imagem de entrada atual
+    std::string inputFilename = "src/cooper.png"; // Imagem de entrada atual
 
     // Cria um objeto Image carregando a imagem do caminho especificado.
     Image img(inputFilename);
@@ -61,7 +62,7 @@ int main() {
     // O artigo usa sigma = 0.8 
     // O valor de 'k' geralmente precisa ser aumentado para imagens suavizadas.
     // Experimente valores de k entre 300 e 1000.
-    auto labels_fz = segmenter.segmentGraphFelzenszwalb(5000.0, 0.8);    
+    auto labels_fz = segmenter.segmentGraphFelzenszwalb(6000.0, 0.8);    
     auto out_fz = segmenter.visualizeSegmentation(labels_fz); // Visualiza os rótulos em cores aleatórias
     out_fz.save(baseName + "_felzenszwalb.png"); // Salva a imagem segmentada
     std::cout << "Segmentação Felzenszwalb gerada: " << baseName << "_felzenszwalb.png" << std::endl;
@@ -122,32 +123,69 @@ int main() {
     // Mantenha estas linhas comentadas; elas servem apenas como exemplo e referência
     // para outras imagens que você possa ter testado ou queira testar no futuro.
     // SEEDS PARA A IMAGEM 'coffe-table.png':
+    // std::vector<int> seeds = {
+    //     // --- Xícara da Frente (Marrom) ---
+    //     img.index(310, 260),   // Interior da xícara (café)
+    //     img.index(350, 250),   // Pires da xícara
+
+    //     // --- Xícara de Trás (Verde) ---
+    //     img.index(155, 350),   // Interior da xícara (espuma)
+    //     img.index(210, 350),   // Pires da xícara
+
+    //     // --- Livro e Óculos ---
+    //     img.index(225, 100),   // Capa do livro (inferior)
+    //     img.index(133, 105),   // Capa do livro (superior)
+    //     img.index(138, 189),   // Capa do livro (superior-direita)
+    //     img.index(218, 180),    // Borda lateral do livro (páginas)
+    //     img.index(275, 60),    // Borda inferior do livro (páginas)
+    //     img.index(150, 135),   // Óculos (lente direita)
+    //     img.index(195, 65),    // Óculos (lente esquerda)
+
+    //     // --- Mesa e Fundo ---
+    //     img.index(140, 40),    // Mesa (próximo ao livro)
+    //     img.index(320, 55),    // Mesa (meio-esquerda)
+    //     img.index(450, 370),   // Mesa (canto inferior direito)
+    //     img.index(460, 135),   // Mesa (canto inferior esquerdo)
+    //     img.index(85, 230),    // Mesa (canto superior direito)
+    //     img.index(85, 25),      // Fundo (canto superior esquerdo)
+    //     img.index(30, 200),      // Fundo
+    // };
+    // SEEDS PARA A IMAGEM 'cooper.png':
     std::vector<int> seeds = {
-        // --- Xícara da Frente (Marrom) ---
-        img.index(310, 260),   // Interior da xícara (café)
-        img.index(350, 250),   // Pires da xícara
+        // --- Cabelo ---
+        img.index(90, 245),   
 
-        // --- Xícara de Trás (Verde) ---
-        img.index(155, 350),   // Interior da xícara (espuma)
-        img.index(210, 350),   // Pires da xícara
+        // --- Rosto e Pele ---
+        img.index(160, 221),   // Testa
+        img.index(165, 168),   // Testa (sombra)
+        img.index(262, 219),   // Nariz
+        img.index(243, 209),   // Nariz (sombra)
+        img.index(269, 293),   // Bochecha (à nossa direita)
+        img.index(290, 178),   // Bochecha (à nossa esquerda)
+        img.index(343, 226),   // Queixo    
+        img.index(229, 345),   // Orelha
 
-        // --- Livro e Óculos ---
-        img.index(225, 100),   // Capa do livro (inferior)
-        img.index(133, 105),   // Capa do livro (superior)
-        img.index(138, 189),   // Capa do livro (superior-direita)
-        img.index(218, 180),    // Borda lateral do livro (páginas)
-        img.index(275, 60),    // Borda inferior do livro (páginas)
-        img.index(150, 135),   // Óculos (lente direita)
-        img.index(195, 65),    // Óculos (lente esquerda)
+        // --- Olhos e Lábios (Detalhes Finos) ---
+        img.index(210, 265),   // Olho (à nossa direita)
+        img.index(217, 188),   // Olho (à nossa esquerda)
+        img.index(300, 225),   // Lábios (superior)
+        img.index(308, 227),   // Lábios (inferior)
+        img.index(195, 267),   // Sobrancelha (à nossa direita)
+        img.index(201, 189),   // Sobrancelha (à nossa esquerda)
 
-        // --- Mesa e Fundo ---
-        img.index(140, 40),    // Mesa (próximo ao livro)
-        img.index(320, 55),    // Mesa (meio-esquerda)
-        img.index(450, 370),   // Mesa (canto inferior direito)
-        img.index(460, 135),   // Mesa (canto inferior esquerdo)
-        img.index(85, 230),    // Mesa (canto superior direito)
-        img.index(85, 25),      // Fundo (canto superior esquerdo)
-        img.index(30, 200),      // Fundo
+        // --- Roupa ---
+        img.index(423, 282),    // Camisa (direita)
+        img.index(414, 205),    // Camisa (esquerda)
+        img.index(464, 223),    // Gravata
+        img.index(455, 380),   // Terno (direita)
+        img.index(458, 141),   // Terno (esquerda)
+
+        // --- Fundo ---
+        img.index(32, 44),     // Fundo (canto superior esquerdo)
+        img.index(441, 53),     // Fundo (canto inferior esquerdo)
+        img.index(362, 450),    // Fundo (canto inferior direito)
+        img.index(78, 450),    // Fundo (canto superior direito)
+        img.index(28, 242)         // Fundo (cima)
     };
     // SEEDS PARA A IMAGEM 'lenna-RGB.png':
     // std::vector<int> seeds = {
