@@ -37,7 +37,7 @@ int main() {
     // Altere este caminho para a imagem que deseja testar.
     // Certifique-se de que a imagem (ex: lego.png, coffe-table.png, lenna-RGB.png, lennaGray.png)
     // está localizada no diretório 'src/'.
-    std::string inputFilename = "src/cooper.png"; // Imagem de entrada atual
+    std::string inputFilename = "src/lennaGray.png"; // Imagem de entrada atual
 
     // Cria um objeto Image carregando a imagem do caminho especificado.
     Image img(inputFilename);
@@ -62,9 +62,17 @@ int main() {
     // O artigo usa sigma = 0.8 
     // O valor de 'k' geralmente precisa ser aumentado para imagens suavizadas.
     // Experimente valores de k entre 300 e 1000.
-    auto labels_fz = segmenter.segmentGraphFelzenszwalb(6000.0, 0.8);    
+
+    // Inicia o cronômetro para o Felzenszwalb
+    auto start_fz = std::chrono::high_resolution_clock::now();
+    auto labels_fz = segmenter.segmentGraphFelzenszwalb(6000.0, 0.8);   
+    // Para o cronômetro para o Felzenszwalb
+    auto end_fz = std::chrono::high_resolution_clock::now();
+    // Calcula a duração em milissegundos
+    auto duration_fz = std::chrono::duration_cast<std::chrono::milliseconds>(end_fz - start_fz); 
+
     auto out_fz = segmenter.visualizeSegmentation(labels_fz); // Visualiza os rótulos em cores aleatórias
-    out_fz.save(baseName + "_felzenszwalb.png"); // Salva a imagem segmentada
+    out_fz.save("outputs/" + baseName + "_felzenszwalb.png");  // Salva a imagem segmentada
     std::cout << "Segmentação Felzenszwalb gerada: " << baseName << "_felzenszwalb.png" << std::endl;
 
     // --- RECORTANDO UM SEGMENTO ESPECÍFICO COM FELZENSZWALB ---
@@ -75,7 +83,7 @@ int main() {
     Pixel background_color_fz = {0, 0, 0}; // Cor de fundo preta para áreas fora do segmento recortado
     Image cropped_fz_segment = segmenter.cropSegment(labels_fz, target_segment_label_fz, background_color_fz);
     if (cropped_fz_segment.width > 0 && cropped_fz_segment.height > 0) {
-        cropped_fz_segment.save(baseName + "_felzenszwalb_cropped_segment.png");
+        cropped_fz_segment.save("outputs/" + baseName + "_felzenszwalb_cropped_segment.png");
         std::cout << "Segmento Felzenszwalb recortado (" << target_segment_label_fz << ") gerado: " 
                   << baseName << "_felzenszwalb_cropped_segment.png" << std::endl;
     } else {
@@ -88,6 +96,10 @@ int main() {
     // 1. CALCULAR IMAGEM DE GRADIENTE (Pré-processamento necessário para o Watershed)
     // Conforme justificado pelo artigo, o IFT-Watershed opera sobre as "cristas"
     // de uma imagem de gradiente, e não na imagem de cores original.
+
+    // Inicia o cronômetro para o IFT (incluindo cálculo de gradiente)
+    auto start_ift = std::chrono::high_resolution_clock::now();
+
     std::cout << "\nCalculando imagem de gradiente para o IFT-Watershed..." << std::endl;
     auto gradientImageVector = segmenter.calculateGradientMagnitude();
 
@@ -101,7 +113,7 @@ int main() {
         gradientVisImage.data[i] = Pixel{gray_val, gray_val, gray_val};
     }
 
-    gradientVisImage.save(baseName + "_gradient.png");
+    gradientVisImage.save("outputs/" + baseName + "_gradient.png");
     std::cout << "Imagem de gradiente gerada: " << baseName << "_gradient.png" << std::endl;
     
     // As 'seeds' (sementes) são pontos iniciais a partir dos quais o IFT expande as regiões.
@@ -151,85 +163,85 @@ int main() {
     //     img.index(30, 200),      // Fundo
     // };
     // SEEDS PARA A IMAGEM 'cooper.png':
-    std::vector<int> seeds = {
-        // --- Cabelo ---
-        img.index(90, 245),   
-
-        // --- Rosto e Pele ---
-        img.index(160, 221),   // Testa
-        img.index(165, 168),   // Testa (sombra)
-        img.index(262, 219),   // Nariz
-        img.index(243, 209),   // Nariz (sombra)
-        img.index(269, 293),   // Bochecha (à nossa direita)
-        img.index(290, 178),   // Bochecha (à nossa esquerda)
-        img.index(343, 226),   // Queixo    
-        img.index(229, 345),   // Orelha
-
-        // --- Olhos e Lábios (Detalhes Finos) ---
-        img.index(210, 265),   // Olho (à nossa direita)
-        img.index(217, 188),   // Olho (à nossa esquerda)
-        img.index(300, 225),   // Lábios (superior)
-        img.index(308, 227),   // Lábios (inferior)
-        img.index(195, 267),   // Sobrancelha (à nossa direita)
-        img.index(201, 189),   // Sobrancelha (à nossa esquerda)
-
-        // --- Roupa ---
-        img.index(423, 282),    // Camisa (direita)
-        img.index(414, 205),    // Camisa (esquerda)
-        img.index(464, 223),    // Gravata
-        img.index(455, 380),   // Terno (direita)
-        img.index(458, 141),   // Terno (esquerda)
-
-        // --- Fundo ---
-        img.index(32, 44),     // Fundo (canto superior esquerdo)
-        img.index(441, 53),     // Fundo (canto inferior esquerdo)
-        img.index(362, 450),    // Fundo (canto inferior direito)
-        img.index(78, 450),    // Fundo (canto superior direito)
-        img.index(28, 242)         // Fundo (cima)
-    };
-    // SEEDS PARA A IMAGEM 'lenna-RGB.png':
     // std::vector<int> seeds = {
+    //     // --- Cabelo ---
+    //     img.index(90, 245),   
+
     //     // --- Rosto e Pele ---
-    //     img.index(225, 306),   // Testa
-    //     img.index(310, 240),   // Bochecha (à nossa esquerda)
-    //     img.index(300, 300),   // Nariz
-    //     img.index(385, 275),   // Queixo
-    //     img.index(440, 320),   // Ombro (à frente)
-    //     img.index(465, 250),   // Ombro (atrás)
-    //     img.index(470, 330),   // Ombro (baixo)
+    //     img.index(160, 221),   // Testa
+    //     img.index(165, 168),   // Testa (sombra)
+    //     img.index(262, 219),   // Nariz
+    //     img.index(243, 209),   // Nariz (sombra)
+    //     img.index(269, 293),   // Bochecha (à nossa direita)
+    //     img.index(290, 178),   // Bochecha (à nossa esquerda)
+    //     img.index(343, 226),   // Queixo    
+    //     img.index(229, 345),   // Orelha
 
     //     // --- Olhos e Lábios (Detalhes Finos) ---
-    //     img.index(261, 263),   // Olho (à nossa esquerda)
-    //     img.index(262, 326),   // Olho (à nossa direita)
-    //     img.index(347, 291),   // Lábios
+    //     img.index(210, 265),   // Olho (à nossa direita)
+    //     img.index(217, 188),   // Olho (à nossa esquerda)
+    //     img.index(300, 225),   // Lábios (superior)
+    //     img.index(308, 227),   // Lábios (inferior)
+    //     img.index(195, 267),   // Sobrancelha (à nossa direita)
+    //     img.index(201, 189),   // Sobrancelha (à nossa esquerda)
 
-    //     // --- Chapéu ---
-    //     img.index(66, 161),    // Topo do chapéu
-    //     img.index(91, 182),   // Meio do chapéu (área de textura)
-    //     img.index(145, 225),   // Fita do chapéu
-    //     img.index(185, 368),   // Aba do chapéu (próxima ao fundo)
-    //     img.index(185, 308),   // Aba do chapéu (próxima ao cabelo)
-
-    //     // --- Cabelo ---
-    //     img.index(359, 344),   // Cabelo próximo ao rosto
-    //     img.index(386, 186),   // Cabelo nas costas
-
-    //     // --- Pluma Roxa (Textura Complexa) ---
-    //     img.index(218, 201),   // Parte de cima da pluma
-    //     img.index(321, 109),   // Meio da pluma
-    //     img.index(362, 92),   // Meio da pluma
-    //     img.index(462, 106),    // Ponta de baixo da pluma
+    //     // --- Roupa ---
+    //     img.index(423, 282),    // Camisa (direita)
+    //     img.index(414, 205),    // Camisa (esquerda)
+    //     img.index(464, 223),    // Gravata
+    //     img.index(455, 380),   // Terno (direita)
+    //     img.index(458, 141),   // Terno (esquerda)
 
     //     // --- Fundo ---
-    //     img.index(230, 81),    // Fundo vermelho/rosa (à esquerda)
-    //     img.index(19, 221),    // Fundo vermelho/rosa (topo)
-    //     img.index(354, 474),   // Reflexo no espelho (objeto amarelo)
-    //     img.index(204, 398),   // borda do espelho
-    //     img.index(60, 475),    // borda do espelho (cima)
-    //     img.index(105, 372),   // Área escura (canto superior direito)
-    //     img.index(371, 5),    // Área escura (atrás das costas)
-    //     img.index(420, 43)    // Pilar (atrás das costas)
+    //     img.index(32, 44),     // Fundo (canto superior esquerdo)
+    //     img.index(441, 53),     // Fundo (canto inferior esquerdo)
+    //     img.index(362, 450),    // Fundo (canto inferior direito)
+    //     img.index(78, 450),    // Fundo (canto superior direito)
+    //     img.index(28, 242)         // Fundo (cima)
     // };
+    // SEEDS PARA A IMAGEM 'lenna-RGB.png':
+    std::vector<int> seeds = {
+        // --- Rosto e Pele ---
+        img.index(225, 306),   // Testa
+        img.index(310, 240),   // Bochecha (à nossa esquerda)
+        img.index(300, 300),   // Nariz
+        img.index(385, 275),   // Queixo
+        img.index(440, 320),   // Ombro (à frente)
+        img.index(465, 250),   // Ombro (atrás)
+        img.index(470, 330),   // Ombro (baixo)
+
+        // --- Olhos e Lábios (Detalhes Finos) ---
+        img.index(261, 263),   // Olho (à nossa esquerda)
+        img.index(262, 326),   // Olho (à nossa direita)
+        img.index(347, 291),   // Lábios
+
+        // --- Chapéu ---
+        img.index(66, 161),    // Topo do chapéu
+        img.index(91, 182),   // Meio do chapéu (área de textura)
+        img.index(145, 225),   // Fita do chapéu
+        img.index(185, 368),   // Aba do chapéu (próxima ao fundo)
+        img.index(185, 308),   // Aba do chapéu (próxima ao cabelo)
+
+        // --- Cabelo ---
+        img.index(359, 344),   // Cabelo próximo ao rosto
+        img.index(386, 186),   // Cabelo nas costas
+
+        // --- Pluma Roxa (Textura Complexa) ---
+        img.index(218, 201),   // Parte de cima da pluma
+        img.index(321, 109),   // Meio da pluma
+        img.index(362, 92),   // Meio da pluma
+        img.index(462, 106),    // Ponta de baixo da pluma
+
+        // --- Fundo ---
+        img.index(230, 81),    // Fundo vermelho/rosa (à esquerda)
+        img.index(19, 221),    // Fundo vermelho/rosa (topo)
+        img.index(354, 474),   // Reflexo no espelho (objeto amarelo)
+        img.index(204, 398),   // borda do espelho
+        img.index(60, 475),    // borda do espelho (cima)
+        img.index(105, 372),   // Área escura (canto superior direito)
+        img.index(371, 5),    // Área escura (atrás das costas)
+        img.index(420, 43)    // Pilar (atrás das costas)
+    };
     
 
     // Verificação de segurança para garantir que todas as sementes estão dentro dos limites da imagem.
@@ -242,8 +254,14 @@ int main() {
 
     // Executa o algoritmo IFT com as sementes definidas.
     auto labels_ift = segmenter.segmentGraphIFT(gradientImageVector, seeds);
+
+    // Para o cronômetro para o IFT
+    auto end_ift = std::chrono::high_resolution_clock::now();
+    // Calcula a duração em milissegundos
+    auto duration_ift = std::chrono::duration_cast<std::chrono::milliseconds>(end_ift - start_ift);
+
     auto out_ift = segmenter.visualizeSegmentation(labels_ift); // Visualiza os rótulos
-    out_ift.save(baseName + "_ift_watershed.png"); // Salva a imagem segmentada
+    out_ift.save("outputs/" + baseName + "_ift_watershed.png"); // Salva a imagem segmentada
     std::cout << "Segmentação IFT-Watershed gerada: " << baseName << "_ift_watershed.png" << std::endl;
 
     // --- RECORTANDO UM SEGMENTO ESPECÍFICO COM IFT ---
@@ -254,7 +272,7 @@ int main() {
     Pixel background_color_ift = {0, 0, 0}; // Cor de fundo preta para áreas fora do segmento recortado
     Image cropped_ift_segment = segmenter.cropSegment(labels_ift, target_segment_label_ift, background_color_ift);
     if (cropped_ift_segment.width > 0 && cropped_ift_segment.height > 0) {
-        cropped_ift_segment.save(baseName + "_ift_watershed_cropped_segment.png");
+        cropped_ift_segment.save("outputs/" + baseName + "_ift_watershed_cropped_segment.png");
         std::cout << "Segmento IFT-Watershed recortado (" << target_segment_label_ift << ") gerado: " 
                   << baseName << "_ift_watershed_cropped_segment.png" << std::endl;
     } else {
@@ -277,6 +295,13 @@ int main() {
         std::cout << "Isso é esperado no IFT-Watershed se sementes próximas competirem e uma delas prevalecer." << std::endl;
     }
     std::cout << "--- FIM DEPURACAO IFT-WATERSHED ---\n" << std::endl;
+
+    // --- EXIBE OS TEMPOS DE EXECUÇÃO ---
+    std::cout << "\n----------------------------------------" << std::endl;
+    std::cout << "--- TEMPO DE EXECUÇÃO ---" << std::endl;
+    std::cout << "Algoritmo Felzenszwalb: " << duration_fz.count() << " ms" << std::endl;
+    std::cout << "Algoritmo IFT (com gradiente): " << duration_ift.count() << " ms" << std::endl;
+    std::cout << "----------------------------------------\n" << std::endl;
 
     std::cout << "Processo de segmentação e recorte concluído!\n";
     return 0; // Retorna 0 indicando sucesso.
